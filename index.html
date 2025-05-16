@@ -2624,7 +2624,7 @@
             title="1. Genereer AI-prompt voor huidige observatie">
             <span class="btn-icon">✨</span>1. Genereer AI-prompt<span class="shortcut-hint">Alt+G</span>
           </button>
-          <button id="genAlleBtn" onclick="genereerPromptVoorAlleDeelnemers()" class="btn-primary full-width" 
+          <button id="genAlleBtn" onclick="genereerAllePrompts()" class="btn-primary full-width" 
             title="1. Genereer één AI-prompt voor alle deelnemers samen">
             <span class="btn-icon">🔄</span>1. AI-prompt voor alle deelnemers<span class="shortcut-hint">Alt+A</span>
           </button>
@@ -3776,23 +3776,54 @@
       const maxRetries = 3;
       
       recognition.onresult = function(event) {
-        // Zorg voor een schone start voor de interim transcriptie bij elke event
-        let interimTranscript = '';
-        let finalTranscript = globals.permanenteTranscript || '';
-        
+        // VOLLEDIG NIEUWE IMPLEMENTATIE VOOR MOBIEL
         if (isMobile) {
-          // Speciale aanpak voor mobiele apparaten
-          // Verwerk alleen finale resultaten om herhalingen te voorkomen
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript + ' ';
-              globals.permanenteTranscript = finalTranscript;
-              // Reset retry count bij succesvolle herkenning
-              retryCount = 0;
+          // Op mobiel: alleen één enkel resultaat verwerken
+          try {
+            console.log('Mobiel resultaat ontvangen', { resultLength: event.results.length });
+            
+            // Neem alleen het laatste resultaat (één zin per keer)
+            let transcript = '';
+            let laatsteResultaat = event.results[event.results.length - 1];
+            
+            if (laatsteResultaat.isFinal) {
+              transcript = laatsteResultaat[0].transcript;
+              
+              // Voeg toe aan bestaande tekst met spatie
+              const huidigeInput = document.getElementById('input').value;
+              if (huidigeInput && !huidigeInput.endsWith(' ')) {
+                document.getElementById('input').value = huidigeInput + ' ' + transcript;
+              } else {
+                document.getElementById('input').value = huidigeInput + transcript;
+              }
+              
+              console.log('Mobiele transcriptie toegevoegd:', transcript);
+              
+              // Stop de huidige herkenning, wacht kort, en start opnieuw
+              // Dit voorkomt het stapelprobleem op mobiel
+              setTimeout(function() {
+                try {
+                  if (globals.isOpnameActief) {
+                    recognition.stop();
+                    setTimeout(function() {
+                      if (globals.isOpnameActief) {
+                        recognition.start();
+                      }
+                    }, 300);
+                  }
+                } catch (error) {
+                  console.warn('Fout bij mobiele herkenningscyclus:', error);
+                }
+              }, 100);
             }
-            // Op mobiel negeren we interim resultaten volledig
+          } catch (error) {
+            console.error('Fout bij verwerken mobiel resultaat:', error);
           }
         } else {
+          // DESKTOP IMPLEMENTATIE (ongewijzigd)
+          let interimTranscript = '';
+          let finalTranscript = globals.permanenteTranscript || '';
+          
           // Desktop aanpak - verwerk zowel interim als final resultaten
           const currentResult = event.results[event.results.length - 1];
           
@@ -3806,16 +3837,15 @@
             // Alleen het huidige interim resultaat tonen
             interimTranscript = currentResult[0].transcript;
           }
+          
+          // Update alleen de waarde van het invoerveld, geen tussentijdse transcripties opslaan
+          document.getElementById('input').value = finalTranscript + interimTranscript;
+          console.log('Desktop spraakherkenning update:', { 
+            final: finalTranscript, 
+            interim: interimTranscript,
+            resultCount: event.results.length
+          });
         }
-        
-        // Update alleen de waarde van het invoerveld, geen tussentijdse transcripties opslaan
-        document.getElementById('input').value = finalTranscript + interimTranscript;
-        console.log('Spraakherkenning update:', { 
-          isMobile: isMobile,
-          final: finalTranscript, 
-          interim: interimTranscript,
-          resultCount: event.results.length
-        });
       };
       
       recognition.onerror = function(event) {
@@ -3900,6 +3930,10 @@
         return;
       }
 
+      // Detecteer of we op een mobiel apparaat zitten
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      console.log('Opname gestart op:', { isMobile, userAgent: navigator.userAgent });
+
       if (!globals.recognition) {
         // Controleer of de browser spraakherkenning ondersteunt
         if (!('webkitSpeechRecognition' in window)) {
@@ -3909,16 +3943,13 @@
         
         // Creëer spraakherkenning object slechts één keer
         try {
-          // Detecteer of we op een mobiel apparaat zitten
-          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-          console.log('Apparaatdetectie bij initialisatie:', { isMobile, userAgent: navigator.userAgent });
-
           globals.recognition = new webkitSpeechRecognition();
           
           if (isMobile) {
-            // Mobiel-specifieke instellingen
-            globals.recognition.continuous = false; // Geen continue modus op mobiel om problemen te voorkomen
-            globals.recognition.interimResults = false; // Geen interim resultaten op mobiel
+            // Speciale mobiele instellingen
+            globals.recognition.continuous = false;
+            globals.recognition.interimResults = false;
+            globals.recognition.maxAlternatives = 1;
           } else {
             // Desktop instellingen
             globals.recognition.continuous = true;
@@ -3930,7 +3961,11 @@
           // Gebruik de centrale functie voor het instellen van event handlers
           setupSpeechRecognitionEvents(globals.recognition);
           
-          console.log('Spraakherkenning succesvol geïnitialiseerd');
+          console.log('Spraakherkenning geïnitialiseerd met configuratie:', { 
+            isMobile, 
+            continuous: globals.recognition.continuous, 
+            interimResults: globals.recognition.interimResults 
+          });
         } catch (error) {
           console.error('Fout bij setup spraakherkenning:', error);
           showNotification('Er ging iets mis bij het instellen van de spraakherkenning', 'error');
@@ -3955,6 +3990,27 @@
           }
           
           globals.isOpnameActief = true;
+          
+          // Op mobiele apparaten: doe een extra check en harde reset
+          if (isMobile) {
+            try {
+              // Volledig opnieuw aanmaken voor mobiel om problemen te voorkomen
+              globals.recognition = new webkitSpeechRecognition();
+              globals.recognition.continuous = false;
+              globals.recognition.interimResults = false;
+              globals.recognition.maxAlternatives = 1;
+              globals.recognition.lang = 'nl-NL';
+              
+              // Setup events voor mobiel
+              setupSpeechRecognitionEvents(globals.recognition);
+              
+              // Toon een notification specifiek voor mobiel
+              showNotification('Mobiele spraakherkenning gestart in korte-sessie modus', 'info', 2000);
+            } catch (mobileError) {
+              console.error('Fout bij mobiele herstart:', mobileError);
+            }
+          }
+
           globals.recognition.start();
           
           // Update UI
@@ -3983,7 +4039,7 @@
           globals.laatsteInterimTranscript = '';
           
           showNotification('Opname gestart', 'success');
-          console.log('Nieuwe spraakopname sessie gestart');
+          console.log('Spraakopname gestart in ' + (isMobile ? 'mobiele' : 'desktop') + ' modus');
         } catch (error) {
           console.error('Fout bij starten opname:', error);
           showNotification('Er ging iets mis bij het starten van de opname: ' + error.message, 'error');
