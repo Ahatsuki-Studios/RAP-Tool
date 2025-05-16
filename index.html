@@ -3721,7 +3721,21 @@
     function restartSpeechRecognition() {
       if (globals.isOpnameActief) {
         try {
-          globals.recognition.start();
+          // Controleer en stop eerst eventuele lopende herkenning sessies
+          if (globals.recognition) {
+            try {
+              globals.recognition.stop();
+              // Korte pauze voor de browser om de vorige sessie af te sluiten
+              setTimeout(() => {
+                globals.recognition.start();
+                console.log('Spraakherkenning opnieuw gestart');
+              }, 200);
+            } catch (stopError) {
+              console.warn('Fout bij stoppen voor herstart:', stopError);
+              // Toch proberen te starten
+              globals.recognition.start();
+            }
+          }
         } catch (error) {
           console.error('Fout bij herstarten spraakherkenning:', error);
           stopOpname();
@@ -3777,22 +3791,31 @@
           const maxRetries = 3;
           
           globals.recognition.onresult = function(event) {
+            // Zorg voor een schone start voor de interim transcriptie bij elke event
             let interimTranscript = '';
-            let finalTranscript = globals.permanenteTranscript;
+            let finalTranscript = globals.permanenteTranscript || '';
             
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-                globals.permanenteTranscript = finalTranscript;
-                // Reset retry count bij succesvolle herkenning
-                retryCount = 0;
-              } else {
-                interimTranscript += event.results[i][0].transcript;
-              }
+            // Alleen het meest recente resultaat verwerken om herhalingen te voorkomen
+            const currentResult = event.results[event.results.length - 1];
+            
+            if (currentResult.isFinal) {
+              // Alleen finale resultaten toevoegen aan permanente transcriptie
+              finalTranscript += currentResult[0].transcript + ' ';
+              globals.permanenteTranscript = finalTranscript;
+              // Reset retry count bij succesvolle herkenning
+              retryCount = 0;
+            } else {
+              // Alleen het huidige interim resultaat tonen
+              interimTranscript = currentResult[0].transcript;
             }
             
-            globals.laatsteInterimTranscript = interimTranscript;
+            // Update alleen de waarde van het invoerveld, geen tussentijdse transcripties opslaan
             document.getElementById('input').value = finalTranscript + interimTranscript;
+            console.log('Spraakherkenning update:', { 
+              final: finalTranscript, 
+              interim: interimTranscript,
+              resultCount: event.results.length
+            });
           };
           
           globals.recognition.onerror = function(event) {
@@ -3895,7 +3918,11 @@
           updateOpnameTijd();
           globals.opnameTijdTimer = setInterval(updateOpnameTijd, 1000);
           
+          // Reset de interim transcripties bij elke nieuwe opname
+          globals.laatsteInterimTranscript = '';
+          
           showNotification('Opname gestart', 'success');
+          console.log('Nieuwe spraakopname sessie gestart');
         } catch (error) {
           console.error('Fout bij starten opname:', error);
           showNotification('Er ging iets mis bij het starten van de opname: ' + error.message, 'error');
@@ -3910,6 +3937,9 @@
           globals.recognition.stop();
           globals.isOpnameActief = false;
           
+          // Reset de herkenningsstatus en interim transcripties
+          globals.laatsteInterimTranscript = '';
+          
           // Update UI
           document.getElementById('startOpname').disabled = false;
           document.getElementById('stopOpname').disabled = true;
@@ -3922,6 +3952,19 @@
           // Sla de huidige tekst op voor de huidige deelnemer
           if (globals.huidigeDeelnemer) {
             slaRapportageOp();
+          }
+          
+          // Reset de recognition object volledig om problemen te voorkomen bij de volgende keer
+          try {
+            // Behoud de huidige tekst
+            const huidigeInput = document.getElementById('input').value;
+            
+            // Verwijder en hermaak de recognition instantie bij volgende gebruik
+            globals.recognition = null;
+            
+            console.log('Spraakherkenning object volledig gereset');
+          } catch (resetError) {
+            console.warn('Kon recognition object niet volledig resetten:', resetError);
           }
           
           showNotification('Opname gestopt en rapportage opgeslagen', 'info');
