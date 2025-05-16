@@ -2433,6 +2433,19 @@
       </div>
     </div>
   </div>
+  <!-- Voeg deze HTML toe net voor de sluitende body tag -->
+  <div id="changelog-modal" class="help-modal">
+    <div class="help-modal-content">
+      <button class="help-modal-close" onclick="sluitChangelog()">×</button>
+      <h1>Wijzigingsgeschiedenis</h1>
+      <div id="changelog-content" class="changelog-content">
+        <div class="changelog-loading">
+          <span class="material-icons" style="margin-right: 0.5rem;">hourglass_empty</span>
+          Changelog laden...
+        </div>
+      </div>
+    </div>
+  </div>
   <!-- Service Worker registratie -->
   <script>
     if ('serviceWorker' in navigator) {
@@ -2454,6 +2467,19 @@
 
   <div id="notification-container" class="notification-container"></div>
   <div class="container">
+    <!-- Header buttons -->
+    <div class="header-buttons">
+      <button class="btn" onclick="toggleDarkMode()" title="Wissel tussen donker en licht thema">
+        <span class="dark-icon material-icons">dark_mode</span>
+        <span class="light-icon material-icons">light_mode</span>
+        <span class="mode-text">Donker</span>
+      </button>
+      <button class="btn" onclick="showHelp()" title="Bekijk de gebruikershandleiding">
+        <span class="material-icons">help_outline</span>
+        Help
+      </button>
+    </div>
+    
     <!-- Notifications container -->
     <div class="notifications-container">
       <div class="update-banner" id="update-banner">
