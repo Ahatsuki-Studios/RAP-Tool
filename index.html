@@ -3782,11 +3782,18 @@
         
         globals.recognition.onresult = function(event) {
           let interimTranscript = '';
-          let finalTranscript = globals.permanenteTranscript;
+          let finalTranscript = globals.permanenteTranscript || '';
           
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
+              // Voeg alleen toe aan permanente transcript als het niet al bestaat
+              // Dit voorkomt dubbele woorden
+              let nieuweTekst = event.results[i][0].transcript;
+              if (finalTranscript.trim().endsWith(nieuweTekst.trim())) {
+                console.log('Dubbele tekst gedetecteerd, wordt overgeslagen:', nieuweTekst);
+              } else {
+                finalTranscript += nieuweTekst;
+              }
               globals.permanenteTranscript = finalTranscript;
               // Reset retry count bij succesvolle herkenning
               retryCount = 0;
@@ -3796,6 +3803,13 @@
           }
           
           globals.laatsteInterimTranscript = interimTranscript;
+          
+          // Controleer op duplicaties tussen finalTranscript en interimTranscript
+          if (interimTranscript && finalTranscript.trim().endsWith(interimTranscript.trim())) {
+            console.log('Dubbele interim tekst gedetecteerd');
+            interimTranscript = '';
+          }
+          
           document.getElementById('input').value = finalTranscript + interimTranscript;
         };
         
@@ -3868,6 +3882,12 @@
     }
 
     function startOpname() {
+      // Als opname al actief is, doe niets
+      if (globals.isOpnameActief) {
+        console.log('Opname is al actief');
+        return;
+      }
+
       const heeftMeerdereDeelnemers = globals.deelnemers.length > 1;
       
       if (heeftMeerdereDeelnemers && !globals.huidigeDeelnemer) {
@@ -3903,8 +3923,24 @@
       
       if (globals.recognition) {
         try {
+          // Voeg logbericht toe om flow te verifiëren
+          console.log('Opname starten...');
+          
+          // Reset eventuele bestaande recognition instance
+          if (globals.recognition) {
+            try {
+              globals.recognition.stop();
+              console.log('Bestaande recognition gestopt voordat we een nieuwe starten');
+            } catch (e) {
+              console.log('Geen actieve recognition om te stoppen');
+            }
+          }
+          
           // Bewaar huidige tekst voordat we beginnen met opnemen
           const huidigeInput = document.getElementById('input').value;
+          
+          // Reset globale variabelen om schoon te beginnen
+          globals.laatsteInterimTranscript = '';
           
           // Als er al tekst is, zorg voor spatie/nieuwe regel
           if (huidigeInput.trim()) {
@@ -3917,6 +3953,9 @@
           } else {
             globals.permanenteTranscript = '';
           }
+          
+          // Configureer de spraakherkenning opnieuw
+          setupSpeechRecognition();
           
           globals.isOpnameActief = true;
           globals.recognition.start();
@@ -3944,6 +3983,7 @@
           globals.opnameTijdTimer = setInterval(updateOpnameTijd, 1000);
           
           showNotification('Opname gestart', 'success');
+          console.log('Opname succesvol gestart');
         } catch (error) {
           console.error('Fout bij starten opname:', error);
           showNotification('Er ging iets mis bij het starten van de opname: ' + error.message, 'error');
@@ -3953,9 +3993,15 @@
     }
 
     function stopOpname() {
+      console.log('stopOpname aangeroepen, isOpnameActief:', globals.isOpnameActief);
+      
       if (globals.recognition && globals.isOpnameActief) {
         try {
+          // Probeer actieve herkenning te stoppen
           globals.recognition.stop();
+          console.log('Recognition stop commando verzonden');
+          
+          // Markeer als inactief (ongeacht of stop succesvol was)
           globals.isOpnameActief = false;
           
           // Update UI
@@ -3967,16 +4013,42 @@
           clearInterval(globals.opnameTijdTimer);
           globals.opnameStartTijd = null;
           
+          // Zorg dat eventuele laatste interimtekst permanent wordt
+          if (globals.laatsteInterimTranscript && globals.laatsteInterimTranscript.trim() !== '') {
+            console.log('Laatste interimtekst toevoegen aan permanente tekst:', globals.laatsteInterimTranscript);
+            if (globals.permanenteTranscript) {
+              globals.permanenteTranscript += globals.laatsteInterimTranscript;
+            } else {
+              globals.permanenteTranscript = globals.laatsteInterimTranscript;
+            }
+            globals.laatsteInterimTranscript = '';
+            
+            // Update het inputveld
+            document.getElementById('input').value = globals.permanenteTranscript;
+          }
+          
           // Sla de huidige tekst op voor de huidige deelnemer
           if (globals.huidigeDeelnemer) {
             slaRapportageOp();
           }
           
+          // Reset recognition object om eventuele oude staten te verwijderen
+          globals.recognition = null;
+          
           showNotification('Opname gestopt en rapportage opgeslagen', 'info');
         } catch (error) {
           console.error('Fout bij stoppen opname:', error);
           showNotification('Er ging iets mis bij het stoppen van de opname.', 'error');
+          
+          // Forceer reset van opname status
+          globals.isOpnameActief = false;
+          document.getElementById('startOpname').disabled = false;
+          document.getElementById('stopOpname').disabled = true;
+          document.getElementById('opnameIndicator').classList.remove('active');
+          globals.recognition = null;
         }
+      } else {
+        console.log('Geen actieve opname om te stoppen');
       }
     }
 
