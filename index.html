@@ -2632,7 +2632,7 @@
 
         <!-- Tweede rij met kopieer en open knoppen -->
         <div class="knop-rij">
-          <button id="copyPromptBtn" onclick="copyPrompt()" class="btn-copy full-width btn-disabled" disabled 
+          <button id="copyPromptBtn" onclick="kopieerPrompt()" class="btn-copy full-width btn-disabled" disabled 
             title="2. Kopieer de gegenereerde prompt naar het klembord">
             <span class="btn-icon">📋</span>2. Kopieer prompt<span class="shortcut-hint">Alt+C</span>
           </button>
@@ -2854,10 +2854,10 @@
       debugLog('DOMContentLoaded event gestart', {});
       
       try {
-        // Controleer of er deelnemers zijn, zo niet, voeg standaard deelnemer toe
-        if (!Array.isArray(globals.deelnemers) || globals.deelnemers.length === 0) {
-          globals.deelnemers = ['Deelnemer'];
-          globals.rapportages['Deelnemer'] = [];
+        // Initialiseer deelnemers als leeg als ze nog niet bestaan
+        if (!Array.isArray(globals.deelnemers)) {
+          globals.deelnemers = [];
+          globals.rapportages = {};
           saveToLocalStorage('deelnemers', globals.deelnemers);
           saveToLocalStorage('rapportages', globals.rapportages);
         }
@@ -4273,6 +4273,7 @@
         const backupData = {
           deelnemers: globals.deelnemers,
           rapportages: globals.rapportages,
+          huidigePrompt: globals.huidigePrompt, // Voeg huidige prompt toe
           datum: new Date().toISOString(),
           versie: '1.0',
           metadata: {
@@ -4408,6 +4409,15 @@
           
           // Update UI
           updateDeelnemersList();
+          
+          // Update UI-elementen zoals knoppen voor AI-prompt generatie
+          updateUI();
+          
+          // Check of de geladen backup een huidige prompt bevat
+          if (backupData.huidigePrompt) {
+            globals.huidigePrompt = backupData.huidigePrompt;
+            document.getElementById("output").textContent = globals.huidigePrompt;
+          }
           
           showNotification(
             `Backup succesvol hersteld! ${aantalDeelnemers} deelnemer(s) en ${aantalRapportages} rapportage(s) geladen.`, 
