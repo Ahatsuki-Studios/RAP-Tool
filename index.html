@@ -2326,6 +2326,152 @@
         color: var(--text-dark);
       }
     }
+
+    /* Notificatie styling */
+    .notification-container {
+      position: fixed;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-width: 90%;
+      width: auto;
+    }
+
+    @media (max-width: 768px) {
+      .notification-container {
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+    }
+
+    @media (min-width: 769px) {
+      .notification-container {
+        top: 20px;
+        right: 20px;
+        max-width: 300px;
+      }
+    }
+
+    .notification {
+      padding: 1rem;
+      border-radius: 8px;
+      background: white;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    /* Verbeterde mobiele spraakherkenning */
+    function setupSpeechRecognition() {
+      if (!globals.recognition) return;
+
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      console.log('Setup spraakherkenning voor:', isMobile ? 'mobiel' : 'desktop');
+
+      // Configuratie voor mobiel
+      if (isMobile) {
+        globals.recognition.continuous = false;
+        globals.recognition.interimResults = false;
+      } else {
+        globals.recognition.continuous = true;
+        globals.recognition.interimResults = true;
+      }
+
+      globals.recognition.maxAlternatives = 1;
+      globals.recognition.lang = 'nl-NL';
+
+      // Resultaat handler
+      globals.recognition.onresult = function(event) {
+        try {
+          const laatsteResultaat = event.results[event.results.length - 1];
+          
+          if (laatsteResultaat.isFinal) {
+            const transcript = laatsteResultaat[0].transcript;
+            const inputVeld = document.getElementById('input');
+            const huidigeText = inputVeld.value;
+
+            // Voeg tekst toe
+            if (huidigeText && !huidigeText.endsWith(' ')) {
+              inputVeld.value = huidigeText + ' ' + transcript;
+            } else {
+              inputVeld.value = huidigeText + transcript;
+            }
+
+            // Sla op indien nodig
+            if (globals.huidigeDeelnemer) {
+              slaRapportageOp();
+            }
+
+            if (isMobile) {
+              // Stop huidige sessie
+              try {
+                globals.recognition.stop();
+              } catch (e) {
+                console.warn('Kon sessie niet stoppen:', e);
+              }
+
+              // Start nieuwe sessie met vertraging
+              setTimeout(() => {
+                if (globals.isOpnameActief) {
+                  try {
+                    globals.recognition = new webkitSpeechRecognition();
+                    setupSpeechRecognition();
+                    globals.recognition.start();
+                  } catch (error) {
+                    console.error('Fout bij herstarten:', error);
+                    stopOpname();
+                  }
+                }
+              }, 1000);
+            }
+          }
+        } catch (error) {
+          console.error('Fout bij verwerken spraak:', error);
+          if (!isMobile) {
+            showNotification('Probleem bij verwerken spraak', 'warning');
+          }
+        }
+      };
+
+      // Error handler
+      globals.recognition.onerror = function(event) {
+        console.error('Spraakherkenning fout:', event.error);
+        
+        if (event.error === 'no-speech') {
+          if (!isMobile) showNotification('Geen spraak gedetecteerd', 'warning');
+        } else if (event.error === 'audio-capture') {
+          showNotification('Geen microfoon gevonden', 'error');
+          stopOpname();
+        } else if (event.error === 'not-allowed') {
+          showNotification('Microfoon toegang geweigerd', 'error');
+          stopOpname();
+        } else if (event.error === 'network') {
+          showNotification('Netwerkfout', 'error');
+          stopOpname();
+        } else if (event.error !== 'aborted') {
+          if (!isMobile) showNotification('Onverwachte fout', 'error');
+          stopOpname();
+        }
+      };
+
+      // End handler
+      globals.recognition.onend = function() {
+        if (!globals.isOpnameActief) return;
+
+        if (!isMobile) {
+          try {
+            globals.recognition.start();
+          } catch (error) {
+            console.error('Herstart fout:', error);
+            stopOpname();
+          }
+        }
+      };
+    }
   </style>
   <div id="notification-container" class="notification-container"></div>
   <!-- Voeg deze HTML toe net voor de sluitende body tag -->
@@ -5529,6 +5675,137 @@
         // Start opname
         globals.isOpnameActief = true;
         globals.recognition.start();
+
+        showNotification('Opname gestart', 'success');
+      } catch (error) {
+        console.error('Start fout:', error);
+        showNotification('Kon opname niet starten', 'error');
+        stopOpname();
+      }
+    }
+
+    // Mobiele spraakherkenning functie
+    function startMobileRecognition() {
+      if (!globals.isOpnameActief) return;
+      
+      try {
+        // Stop eerst eventuele bestaande recognition
+        if (globals.recognition) {
+          try {
+            globals.recognition.stop();
+            globals.recognition.onresult = null;
+            globals.recognition.onerror = null;
+            globals.recognition.onend = null;
+          } catch (e) {
+            console.warn('Kon bestaande recognition niet stoppen:', e);
+          }
+        }
+
+        // Maak nieuwe instance
+        globals.recognition = new webkitSpeechRecognition();
+        globals.recognition.continuous = false;
+        globals.recognition.interimResults = false;
+        globals.recognition.lang = 'nl-NL';
+
+        // Resultaat handler
+        globals.recognition.onresult = function(event) {
+          try {
+            const laatsteResultaat = event.results[event.results.length - 1];
+            if (laatsteResultaat.isFinal) {
+              const transcript = laatsteResultaat[0].transcript;
+              const inputVeld = document.getElementById('input');
+              const huidigeText = inputVeld.value;
+
+              // Voeg tekst toe
+              inputVeld.value = huidigeText + (huidigeText && !huidigeText.endsWith(' ') ? ' ' : '') + transcript;
+
+              // Sla op indien nodig
+              if (globals.huidigeDeelnemer) {
+                slaRapportageOp();
+              }
+            }
+          } catch (error) {
+            console.error('Fout bij verwerken spraak:', error);
+          }
+        };
+
+        // Error handler
+        globals.recognition.onerror = function(event) {
+          if (event.error === 'audio-capture') {
+            showNotification('Geen microfoon gevonden', 'error');
+            stopOpname();
+          } else if (event.error === 'not-allowed') {
+            showNotification('Microfoon toegang geweigerd', 'error');
+            stopOpname();
+          }
+        };
+
+        // End handler - wacht even en start dan opnieuw
+        globals.recognition.onend = function() {
+          if (globals.isOpnameActief) {
+            setTimeout(() => {
+              if (globals.isOpnameActief) {
+                startMobileRecognition();
+              }
+            }, 1000);
+          }
+        };
+
+        // Start de nieuwe sessie
+        globals.recognition.start();
+        
+      } catch (error) {
+        console.error('Fout bij starten mobiele spraakherkenning:', error);
+        stopOpname();
+      }
+    }
+
+    // Update de startOpname functie
+    function startOpname() {
+      if (globals.isOpnameActief) {
+        console.log('Opname is al actief');
+        return;
+      }
+
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const heeftMeerdereDeelnemers = globals.deelnemers.length > 1;
+
+      if (heeftMeerdereDeelnemers && !globals.huidigeDeelnemer) {
+        showNotification('Selecteer eerst een deelnemer', 'warning');
+        return;
+      }
+
+      try {
+        if (!('webkitSpeechRecognition' in window)) {
+          showNotification('Spraakherkenning niet ondersteund', 'warning');
+          return;
+        }
+
+        // Update UI
+        document.getElementById('startOpname').disabled = true;
+        document.getElementById('stopOpname').disabled = false;
+        document.getElementById('opnameIndicator').classList.add('active');
+
+        // Start timer
+        globals.opnameStartTijd = Date.now();
+        updateOpnameTijd();
+        globals.opnameTijdTimer = setInterval(updateOpnameTijd, 1000);
+
+        // Activeer opname
+        globals.isOpnameActief = true;
+
+        // Start de juiste herkenning
+        if (isMobile) {
+          startMobileRecognition();
+        } else {
+          // Desktop implementatie blijft hetzelfde
+          globals.recognition = new webkitSpeechRecognition();
+          globals.recognition.continuous = true;
+          globals.recognition.interimResults = true;
+          globals.recognition.lang = 'nl-NL';
+          setupSpeechRecognition();
+          globals.recognition.start();
+        }
 
         showNotification('Opname gestart', 'success');
       } catch (error) {
